@@ -40,7 +40,6 @@ void loop()
 {
   if (WiFi.status() != WL_CONNECTED)
   {
-    Serial.println("Reconnecting WiFi...");
     connectWiFi();
   }
 
@@ -48,17 +47,13 @@ void loop()
   {
     sendDataPrevMillis = millis();
 
-    float temperature = 28.5;
-    float humidity = 65;
-    float co_level = 10;
-    float pm25 = 40;
-    float aqi = 75;
+    float temperature = random(25, 35);
+    float humidity = random(50, 80);
+    float gas = random(100, 300);
 
-    Firebase.RTDB.setFloat(&fbdo, "air_quality_monitor/device_1/temperature", temperature);
-    Firebase.RTDB.setFloat(&fbdo, "air_quality_monitor/device_1/humidity", humidity);
-    Firebase.RTDB.setFloat(&fbdo, "air_quality_monitor/device_1/co_level", co_level);
-    Firebase.RTDB.setFloat(&fbdo, "air_quality_monitor/device_1/pm25", pm25);
-    Firebase.RTDB.setFloat(&fbdo, "air_quality_monitor/device_1/aqi", aqi);
+    Firebase.RTDB.setFloat(&fbdo, "air_quality/device1/temperature", temperature);
+    Firebase.RTDB.setFloat(&fbdo, "air_quality/device1/humidity", humidity);
+    Firebase.RTDB.setFloat(&fbdo, "air_quality/device1/gas_level", gas);
 
     Serial.println("Data uploaded to Firebase");
   }
