@@ -19,10 +19,22 @@ function getAQILevel(val) {
 
 // ─── Simulated live data ─────────────────────────────────────────────────────
 const MAX_POINTS = 20;
-function initSeries(base, spread) {
+const TIME_PROFILES = [
+  { name: "Night",     start: 0,  end: 6,  values: { pm25: 18, co: 6.5, temp: 22.5, hum: 74 } },
+  { name: "Morning",   start: 6,  end: 12, values: { pm25: 36, co: 14,  temp: 26.0, hum: 62 } },
+  { name: "Afternoon", start: 12, end: 18, values: { pm25: 58, co: 28,  temp: 31.5, hum: 48 } },
+  { name: "Evening",   start: 18, end: 24, values: { pm25: 72, co: 38,  temp: 27.5, hum: 58 } },
+];
+
+function getProfileByTime(date) {
+  const hour = date.getHours();
+  return TIME_PROFILES.find((p) => hour >= p.start && hour < p.end) || TIME_PROFILES[0];
+}
+
+function initSeriesFromValue(value, amplitude) {
   return Array.from({ length: MAX_POINTS }, (_, i) => ({
     t: i,
-    v: +(base + (Math.random() - 0.5) * spread).toFixed(2),
+    v: +(value + Math.sin(i / 2.8) * amplitude).toFixed(2),
   }));
 }
 
@@ -127,12 +139,15 @@ function CustomTooltip({ active, payload, label, unit }) {
 
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
 export default function Dashboard() {
-  const [pm25Series, setPm25Series] = useState(() => initSeries(42, 24));
-  const [coSeries,   setCoSeries]   = useState(() => initSeries(18, 14));
-  const [tempSeries, setTempSeries] = useState(() => initSeries(28, 5));
-  const [humSeries,  setHumSeries]  = useState(() => initSeries(62, 16));
+  const initialProfile = getProfileByTime(new Date());
+  const [pm25Series, setPm25Series] = useState(() => initSeriesFromValue(initialProfile.values.pm25, 3.5));
+  const [coSeries,   setCoSeries]   = useState(() => initSeriesFromValue(initialProfile.values.co, 2.5));
+  const [tempSeries, setTempSeries] = useState(() => initSeriesFromValue(initialProfile.values.temp, 1.2));
+  const [humSeries,  setHumSeries]  = useState(() => initSeriesFromValue(initialProfile.values.hum, 2.8));
   const [tick, setTick] = useState(MAX_POINTS);
   const [now, setNow]   = useState(new Date());
+  const tickRef = useRef(MAX_POINTS);
+  const profileRef = useRef(initialProfile);
 
   const last = (s) => s[s.length - 1].v;
   const pm25 = last(pm25Series);
@@ -141,7 +156,7 @@ export default function Dashboard() {
   const hum  = last(humSeries);
 
   // AQI approximation from PM2.5
-  const aqi = Math.round(Math.min(300, pm25 * 2.1 + Math.random() * 4));
+  const aqi = Math.round(Math.min(300, pm25 * 2.1 + 3));
   const level = getAQILevel(aqi);
 
   // Alerts
@@ -152,12 +167,31 @@ export default function Dashboard() {
 
   useEffect(() => {
     const iv = setInterval(() => {
-      setTick((t) => t + 1);
-      setPm25Series((s) => [...s.slice(1), { t: s[s.length-1].t+1, v: +Math.max(5,  Math.min(200, s[s.length-1].v + (Math.random()-.5)*12)).toFixed(1) }]);
-      setCoSeries((s)   => [...s.slice(1), { t: s[s.length-1].t+1, v: +Math.max(0,  Math.min(120, s[s.length-1].v + (Math.random()-.5)*8)).toFixed(1) }]);
-      setTempSeries((s) => [...s.slice(1), { t: s[s.length-1].t+1, v: +Math.max(10, Math.min(50,  s[s.length-1].v + (Math.random()-.5)*0.8)).toFixed(1) }]);
-      setHumSeries((s)  => [...s.slice(1), { t: s[s.length-1].t+1, v: +Math.max(10, Math.min(99,  s[s.length-1].v + (Math.random()-.5)*3)).toFixed(1) }]);
-      setNow(new Date());
+      const nextNow = new Date();
+      const profile = getProfileByTime(nextNow);
+      const nextTick = tickRef.current + 1;
+      tickRef.current = nextTick;
+      const phase = nextTick / 3.2;
+      const drift = (base, amp) => +(base + Math.sin(phase) * amp).toFixed(1);
+
+      if (profileRef.current.name !== profile.name) {
+        profileRef.current = profile;
+        setPm25Series(initSeriesFromValue(profile.values.pm25, 3.5));
+        setCoSeries(initSeriesFromValue(profile.values.co, 2.5));
+        setTempSeries(initSeriesFromValue(profile.values.temp, 1.2));
+        setHumSeries(initSeriesFromValue(profile.values.hum, 2.8));
+        tickRef.current = MAX_POINTS;
+        setTick(MAX_POINTS);
+        setNow(nextNow);
+        return;
+      }
+
+      setTick(nextTick);
+      setPm25Series((s) => [...s.slice(1), { t: s[s.length - 1].t + 1, v: drift(profile.values.pm25, 3.5) }]);
+      setCoSeries((s)   => [...s.slice(1), { t: s[s.length - 1].t + 1, v: drift(profile.values.co, 2.5) }]);
+      setTempSeries((s) => [...s.slice(1), { t: s[s.length - 1].t + 1, v: drift(profile.values.temp, 1.2) }]);
+      setHumSeries((s)  => [...s.slice(1), { t: s[s.length - 1].t + 1, v: drift(profile.values.hum, 2.8) }]);
+      setNow(nextNow);
     }, 2000);
     return () => clearInterval(iv);
   }, []);
