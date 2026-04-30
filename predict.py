@@ -6,15 +6,15 @@ from typing import Dict, List, Optional
 import numpy as np
 import pandas as pd
 
+USE_SAFETY_CHOOSER = False
+
 REQUIRED_COLUMNS = [
     "datetime",
     "AQI",
     "PM2.5",
     "PM10",
     "NO2",
-    "SO2",
     "CO",
-    "O3",
     "temperature",
     "humidity",
     "wind_speed",
@@ -23,11 +23,19 @@ REQUIRED_COLUMNS = [
 
 
 def load_model(model_path: str):
-    return joblib.load(model_path)
+    """Load a model with error handling."""
+    try:
+        return joblib.load(model_path)
+    except Exception as e:
+        raise ValueError(f"Failed to load model from {model_path}: {str(e)}")
 
 
 def load_feature_columns(columns_path: str) -> List[str]:
-    return joblib.load(columns_path)
+    """Load feature columns with error handling."""
+    try:
+        return joblib.load(columns_path)
+    except Exception as e:
+        raise ValueError(f"Failed to load feature columns from {columns_path}: {str(e)}")
 
 
 def validate_latest_input(payload: Dict) -> Dict:
@@ -50,9 +58,9 @@ def build_future_feature_row(latest_values: Dict, recent_aqi: List[float], forec
         "PM2.5": float(latest_values["PM2.5"]),
         "PM10": float(latest_values["PM10"]),
         "NO2": float(latest_values["NO2"]),
-        "SO2": float(latest_values["SO2"]),
+        "SO2": 0.0,  
         "CO": float(latest_values["CO"]),
-        "O3": float(latest_values["O3"]),
+        "O3": 0.0, 
         "temperature": float(latest_values["temperature"]),
         "humidity": float(latest_values["humidity"]),
         "wind_speed": float(latest_values["wind_speed"]),
@@ -68,18 +76,10 @@ def build_future_feature_row(latest_values: Dict, recent_aqi: List[float], forec
     return row
 
 
-def forecast_aqi(
-    latest_payload: Dict,
-    model,
-    feature_columns: List[str],
-    horizons: Optional[List[int]] = None,
-) -> Dict[str, float]:
-    """Forecast AQI for future hour horizons using recursive prediction."""
-    if horizons is None:
-        horizons = [1, 3, 6, 12]
-
+def predict_single_aqi(model, latest_payload: Dict, feature_columns: List[str], horizon: int = 1) -> float:
+    """Predict AQI for a single future horizon using the given model."""
     validated = validate_latest_input(latest_payload)
-    forecast_time = pd.to_datetime(validated["datetime"])
+    forecast_time = pd.to_datetime(validated["datetime"]) + timedelta(hours=horizon)
 
     last_aqi = float(validated["AQI"])
     recent_aqi = list(validated.get("previous_aqi", []))
@@ -87,20 +87,54 @@ def forecast_aqi(
         recent_aqi = [last_aqi] * (3 - len(recent_aqi)) + recent_aqi
     recent_aqi.append(last_aqi)
 
-    predictions = {}
-    max_horizon = max(horizons)
+    row = build_future_feature_row(validated, recent_aqi, forecast_time)
+    available_features = [col for col in feature_columns if col in row]
+    X = pd.DataFrame([row], columns=available_features)
+    predicted_aqi = float(model.predict(X)[0])
 
-    for step in range(1, max_horizon + 1):
-        target_time = forecast_time + timedelta(hours=step)
-        row = build_future_feature_row(validated, recent_aqi, target_time)
-        X = pd.DataFrame([row], columns=feature_columns)
-        predicted_aqi = float(model.predict(X)[0])
+    predicted_aqi = max(0, predicted_aqi)
+    return predicted_aqi
 
-        recent_aqi.append(predicted_aqi)
-        if step in horizons:
-            predictions[f"AQI_plus_{step}h"] = round(predicted_aqi, 2)
 
-    return predictions
+def dual_model_prediction(
+    payload: Dict,
+    xgb_model_path: str = "models/model_xgb.joblib",
+    linear_model_path: str = "models/model_linear.joblib",
+    feature_columns_path: str = "models/feature_columns.joblib",
+) -> Dict:
+    """Perform dual-model prediction with chooser mechanism."""
+    xgb_model = load_model(xgb_model_path)
+    linear_model = load_model(linear_model_path)
+    feature_columns = load_feature_columns(feature_columns_path)
+
+    xgb_prediction = predict_single_aqi(xgb_model, payload, feature_columns)
+    linear_prediction = predict_single_aqi(linear_model, payload, feature_columns)
+
+    if USE_SAFETY_CHOOSER:
+        if xgb_prediction >= linear_prediction:
+            selected_prediction = xgb_prediction
+            selected_model = "XGBoost"
+        else:
+            selected_prediction = linear_prediction
+            selected_model = "Linear Regression"
+        reason = "Selected maximum AQI as worst-case safety prediction"
+    else:
+        selected_prediction = linear_prediction
+        selected_model = "Linear Regression"
+        reason = "Using Linear Regression as per configuration"
+
+    print(f"XGBoost prediction: {xgb_prediction:.2f}")
+    print(f"Linear Regression prediction: {linear_prediction:.2f}")
+    print(f"Selected prediction: {selected_prediction:.2f} from {selected_model}")
+    print(f"Reason: {reason}")
+
+    return {
+        "xgboost_prediction": round(xgb_prediction, 2),
+        "linear_prediction": round(linear_prediction, 2),
+        "selected_prediction": round(selected_prediction, 2),
+        "selected_model": selected_model,
+        "reason": reason
+    }
 
 
 def predict_from_saved_model(
@@ -108,6 +142,27 @@ def predict_from_saved_model(
     model_path: str = "models/model_xgb.joblib",
     feature_columns_path: str = "models/feature_columns.joblib",
 ) -> Dict[str, float]:
+    """Legacy function for single model prediction (XGBoost only)."""
     model = load_model(model_path)
     columns = load_feature_columns(feature_columns_path)
-    return forecast_aqi(payload, model, columns)
+    prediction = predict_single_aqi(model, payload, columns)
+    return {"AQI_prediction": prediction}
+
+
+if __name__ == "__main__":
+    sample_payload = {
+        "datetime": "2026-04-30 02:37:00",
+        "AQI": 120,
+        "PM2.5": 25.5,
+        "PM10": 45.2,
+        "NO2": 20.1,
+        "CO": 0.8,
+        "temperature": 28.5,
+        "humidity": 65.0,
+        "wind_speed": 3.2,
+        "pressure": 1013.2,
+        "previous_aqi": [115, 118, 122]
+    }
+
+    result = dual_model_prediction(sample_payload)
+    print("Prediction Result:", result)

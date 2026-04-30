@@ -4,3 +4,30 @@ build/
 .env
 .DS_Store
 .vscode/
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+venv/
+.env
+
+# Model files (optional if too large)
+*.joblib
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Build folders
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/

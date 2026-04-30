@@ -148,6 +148,7 @@ export default function Dashboard() {
   const [now, setNow]   = useState(new Date());
   const tickRef = useRef(MAX_POINTS);
   const profileRef = useRef(initialProfile);
+  const audioContextRef = useRef(null);
 
   const last = (s) => s[s.length - 1].v;
   const pm25 = last(pm25Series);
@@ -158,6 +159,43 @@ export default function Dashboard() {
   // AQI approximation from PM2.5
   const aqi = Math.round(Math.min(300, pm25 * 2.1 + 3));
   const level = getAQILevel(aqi);
+  const prevAqiRef = useRef(aqi);
+
+  const playBuzzerTone = (duration = 0.18, frequency = 950, volume = 0.18) => {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return;
+
+    let context = audioContextRef.current;
+    if (!context) {
+      context = new AudioContext();
+      audioContextRef.current = context;
+    }
+
+    if (context.state === "suspended") {
+      context.resume().catch(() => {});
+    }
+
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    oscillator.type = "square";
+    oscillator.frequency.value = frequency;
+    gain.gain.value = volume;
+    oscillator.connect(gain);
+    gain.connect(context.destination);
+    oscillator.start();
+    oscillator.stop(context.currentTime + duration);
+    oscillator.onended = () => {
+      gain.disconnect();
+      oscillator.disconnect();
+    };
+  };
+
+  useEffect(() => {
+    if (aqi > 50 && prevAqiRef.current <= 50) {
+      playBuzzerTone();
+    }
+    prevAqiRef.current = aqi;
+  }, [aqi]);
 
   // Alerts
   const alerts = [];

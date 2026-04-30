@@ -10,9 +10,9 @@ aqi = np.clip(50 + np.cumsum(np.random.randn(periods)), 10, 200)
 pm25 = np.clip(10 + np.random.randn(periods) * 3, 0, 120)
 pm10 = np.clip(20 + np.random.randn(periods) * 5, 0, 180)
 no2 = np.clip(15 + np.random.randn(periods) * 4, 0, 100)
-so2 = np.clip(5 + np.random.randn(periods) * 2, 0, 30)
+# so2 = np.clip(5 + np.random.randn(periods) * 2, 0, 30)
 co = np.clip(0.4 + np.random.randn(periods) * 0.1, 0.1, 2.0)
-o3 = np.clip(25 + np.random.randn(periods) * 6, 0, 120)
+# o3 = np.clip(25 + np.random.randn(periods) * 6, 0, 120)
 temp = np.clip(15 + np.random.randn(periods) * 5, -5, 40)
 humidity = np.clip(55 + np.random.randn(periods) * 15, 10, 100)
 wind = np.clip(2 + np.random.randn(periods) * 0.8, 0, 10)
@@ -24,9 +24,9 @@ df = pd.DataFrame({
     "PM2.5": np.round(pm25, 1),
     "PM10": np.round(pm10, 1),
     "NO2": np.round(no2, 1),
-    "SO2": np.round(so2, 1),
+    # "SO2": np.round(so2, 1),
     "CO": np.round(co, 2),
-    "O3": np.round(o3, 1),
+    # "O3": np.round(o3, 1),
     "temperature": np.round(temp, 1),
     "humidity": np.round(humidity, 1),
     "wind_speed": np.round(wind, 2),
@@ -34,7 +34,7 @@ df = pd.DataFrame({
 })
 
 np.random.seed(1)
-for col in ["AQI", "PM2.5", "PM10", "NO2", "SO2", "CO", "O3", "temperature", "humidity", "wind_speed", "pressure"]:
+for col in ["AQI", "PM2.5", "PM10", "NO2", "CO", "temperature", "humidity", "wind_speed", "pressure"]:
     missing = np.random.choice(periods, size=8, replace=False)
     df.loc[missing, col] = np.nan
 
