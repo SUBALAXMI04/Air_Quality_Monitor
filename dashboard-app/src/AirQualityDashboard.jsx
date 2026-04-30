@@ -6,12 +6,12 @@ import {
 
 // ─── AQI helpers ────────────────────────────────────────────────────────────
 const AQI_LEVELS = [
-  { max: 50,  label: "Good",                          color: "#22c55e", bg: "#f0fdf4", border: "#bbf7d0" },
-  { max: 100, label: "Moderate",                      color: "#eab308", bg: "#fefce8", border: "#fde68a" },
-  { max: 150, label: "Unhealthy for Sensitive Groups",color: "#f97316", bg: "#fff7ed", border: "#fed7aa" },
-  { max: 200, label: "Unhealthy",                     color: "#ef4444", bg: "#fef2f2", border: "#fecaca" },
-  { max: 300, label: "Very Unhealthy",                color: "#a855f7", bg: "#faf5ff", border: "#e9d5ff" },
-  { max: 9999,label: "Hazardous",                     color: "#9f1239", bg: "#fff1f2", border: "#fecdd3" },
+  { max:  50, label: "Good",        color: "#16a34a", bg: "#f0fdf4", border: "#bbf7d0" },
+  { max: 100, label: "Satisfactory",color: "#65a30d", bg: "#f7fee7", border: "#d9f99d" },
+  { max: 200, label: "Moderate",    color: "#ca8a04", bg: "#fefce8", border: "#fde68a" },
+  { max: 300, label: "Poor",        color: "#ea580c", bg: "#fff7ed", border: "#fed7aa" },
+  { max: 400, label: "Very Poor",   color: "#dc2626", bg: "#fef2f2", border: "#fecaca" },
+  { max: 500, label: "Severe",      color: "#7f1d1d", bg: "#fff1f2", border: "#fecdd3" },
 ];
 function getAQILevel(val) {
   return AQI_LEVELS.find((l) => val <= l.max) || AQI_LEVELS[AQI_LEVELS.length - 1];
@@ -157,7 +157,7 @@ export default function Dashboard() {
   const hum  = last(humSeries);
 
   // AQI approximation from PM2.5
-  const aqi = Math.round(Math.min(300, pm25 * 2.1 + 3));
+  const aqi = Math.round(Math.min(500, pm25 * 2.1 + 3));
   const level = getAQILevel(aqi);
   const prevAqiRef = useRef(aqi);
 
@@ -246,14 +246,18 @@ export default function Dashboard() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        .live-dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; display: inline-block; animation: blink 1.4s infinite; }
+        .live-dot { width: 8px; height: 8px; border-radius: 50%; background: #16a34a; display: inline-block; animation: blink 1.4s infinite; }
         @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.25} }
-        .g2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-        .g4 { display: grid; grid-template-columns: repeat(4,1fr); gap: 14px; }
-        .aqi-table td, .aqi-table th { padding: 7px 14px; }
+        .g2 { display: grid; grid-template-columns: repeat(2,1fr); gap: 16px; }
+        .graphs-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 16px; }
+        .top-row { display: grid; grid-template-columns: 300px 1fr; gap: 16px; align-items: start; }
+        .navbar { display: flex; align-items: center; justify-content: space-between; height: 64px; padding: 0 24px; }
+        .wrap { padding: 24px 20px; }
+        .section { margin-bottom: 28px; }
+        .graph-card:hover { box-shadow: 0 6px 24px rgba(0,0,0,0.09) !important; }
+        .graph-card { transition: box-shadow 0.2s; }
         @media(max-width: 900px) {
           .top-row { grid-template-columns: 1fr !important; }
-          .g2 { grid-template-columns: repeat(2,1fr) !important; }
           .graphs-grid { grid-template-columns: 1fr !important; }
         }
         @media(max-width: 500px) {
@@ -306,7 +310,7 @@ export default function Dashboard() {
               {/* Compact color strips */}
               <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                 {AQI_LEVELS.map((l, i) => {
-                  const ranges = ["0–50","51–100","101–150","151–200","201–300","301+"];
+                  const ranges = ["0–50","51–100","101–200","201–300","301–400","401–500"];
                   const isActive = level === l;
                   return (
                     <div key={i} style={{
