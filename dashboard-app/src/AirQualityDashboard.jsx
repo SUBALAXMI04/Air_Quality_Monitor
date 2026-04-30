@@ -38,6 +38,31 @@ function initSeriesFromValue(value, amplitude) {
   }));
 }
 
+function formatTimeInput(date) {
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${hours}:${minutes}`;
+}
+
+function parseTimeInput(value) {
+  const [hours, minutes] = value.split(":").map(Number);
+  const date = new Date();
+  date.setHours(hours, minutes, 0, 0);
+  return date;
+}
+
+function computePredictionsForTime(date) {
+  const profile = getProfileByTime(date);
+  const hour = date.getHours() + date.getMinutes() / 60;
+  const phase = (hour / 24) * Math.PI * 2;
+  return {
+    pm25: +(profile.values.pm25 * (1 + Math.sin(phase) * 0.14)).toFixed(1),
+    co: +(profile.values.co * (1 + Math.cos(phase) * 0.11)).toFixed(1),
+    temp: +(profile.values.temp + Math.sin(phase) * 1.6).toFixed(1),
+    hum: Math.round(Math.max(0, Math.min(100, profile.values.hum + Math.cos(phase) * 3))),
+  };
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function Badge({ color, bg, border, children }) {
   return (
@@ -144,20 +169,29 @@ export default function Dashboard() {
   const [coSeries,   setCoSeries]   = useState(() => initSeriesFromValue(initialProfile.values.co, 2.5));
   const [tempSeries, setTempSeries] = useState(() => initSeriesFromValue(initialProfile.values.temp, 1.2));
   const [humSeries,  setHumSeries]  = useState(() => initSeriesFromValue(initialProfile.values.hum, 2.8));
+  const [mode, setMode] = useState("live");
+  const [futureTime, setFutureTime] = useState(formatTimeInput(new Date(new Date().getTime() + 3600000)));
+  const [predictedValues, setPredictedValues] = useState(() => computePredictionsForTime(parseTimeInput(formatTimeInput(new Date(new Date().getTime() + 3600000)))));
+  const [predictionMessage, setPredictionMessage] = useState("");
   const [tick, setTick] = useState(MAX_POINTS);
   const [now, setNow]   = useState(new Date());
   const tickRef = useRef(MAX_POINTS);
   const profileRef = useRef(initialProfile);
   const audioContextRef = useRef(null);
+  const wrongAnswerAudioRef = useRef(null);
 
   const last = (s) => s[s.length - 1].v;
-  const pm25 = last(pm25Series);
-  const co   = last(coSeries);
-  const temp = last(tempSeries);
-  const hum  = last(humSeries);
+  const livePm25 = last(pm25Series);
+  const liveCo   = last(coSeries);
+  const liveTemp = last(tempSeries);
+  const liveHum  = last(humSeries);
 
-  // AQI approximation from PM2.5
-  const aqi = Math.round(Math.min(500, pm25 * 2.1 + 3));
+  const displayPm25 = mode === "future" ? predictedValues.pm25 : livePm25;
+  const displayCo   = mode === "future" ? predictedValues.co   : liveCo;
+  const displayTemp = mode === "future" ? predictedValues.temp : liveTemp;
+  const displayHum  = mode === "future" ? predictedValues.hum  : liveHum;
+
+  const aqi = Math.round(Math.min(500, displayPm25 * 2.1 + 3));
   const level = getAQILevel(aqi);
   const prevAqiRef = useRef(aqi);
 
@@ -191,17 +225,34 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
+    wrongAnswerAudioRef.current = new Audio("/wrong-answer-sound-effect.mp3");
+  }, []);
+
+  useEffect(() => {
     if (aqi > 50 && prevAqiRef.current <= 50) {
       playBuzzerTone();
+    }
+    if (aqi > 100 && prevAqiRef.current <= 100) {
+      wrongAnswerAudioRef.current?.play?.().catch(() => {});
     }
     prevAqiRef.current = aqi;
   }, [aqi]);
 
+  useEffect(() => {
+    if (mode === "future") {
+      const target = parseTimeInput(futureTime);
+      setPredictedValues(computePredictionsForTime(target));
+      setPredictionMessage(`Predicting values for ${target.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`);
+    } else {
+      setPredictionMessage("");
+    }
+  }, [mode, futureTime]);
+
   // Alerts
   const alerts = [];
-  if (pm25 > 100) alerts.push({ id: "pm25", icon: "🟠", msg: `PM2.5 is ${pm25.toFixed(1)} µg/m³ — exceeds 100 µg/m³ limit`, color: "#f97316", bg: "#fff7ed", border: "#fed7aa" });
-  if (co > 50)   alerts.push({ id: "co",   icon: "🔴", msg: `CO is ${co.toFixed(1)} ppm — exceeds 50 ppm limit`,          color: "#ef4444", bg: "#fef2f2", border: "#fecaca" });
-  if (aqi > 150) alerts.push({ id: "aqi",  icon: "🟣", msg: `AQI is ${aqi} — ${level.label}`,                             color: level.color, bg: level.bg, border: level.border });
+  if (displayPm25 > 100) alerts.push({ id: "pm25", icon: "🟠", msg: `PM2.5 is ${displayPm25.toFixed(1)} µg/m³ — exceeds 100 µg/m³ limit`, color: "#f97316", bg: "#fff7ed", border: "#fed7aa" });
+  if (displayCo > 50)   alerts.push({ id: "co",   icon: "🔴", msg: `CO is ${displayCo.toFixed(1)} ppm — exceeds 50 ppm limit`,          color: "#ef4444", bg: "#fef2f2", border: "#fecaca" });
+  if (aqi > 150) alerts.push({ id: "aqi",  icon: "🟣", msg: `AQI is ${aqi} — ${level.label}`,                              color: level.color, bg: level.bg, border: level.border });
 
   useEffect(() => {
     const iv = setInterval(() => {
@@ -281,11 +332,22 @@ export default function Dashboard() {
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "#475569" }}>
-              <span className="live-dot" /> Live
-            </div>
+            <button
+              type="button"
+              onClick={() => setMode(mode === "live" ? "future" : "live")}
+              style={{
+                display: "flex", alignItems: "center", gap: 6,
+                fontSize: 13, color: "#475569", border: "none", background: "transparent", cursor: "pointer",
+                padding: 0,
+              }}
+            >
+              <span className="live-dot" style={{ background: mode === "future" ? "#0ea5e9" : "#16a34a" }} />
+              {mode === "future" ? "Future Prediction" : "Live"}
+            </button>
             <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10, padding: "5px 14px", fontSize: 13, color: "#475569", fontVariantNumeric: "tabular-nums" }}>
-              {now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+              {mode === "future"
+                ? `Target: ${futureTime}`
+                : now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
             </div>
           </div>
         </div>
@@ -335,11 +397,28 @@ export default function Dashboard() {
               {/* Sensor tiles */}
               <div>
                 <SectionTitle>2 · Sensor Data Display</SectionTitle>
+                {mode === "future" ? (
+                  <div style={{ marginBottom: 16, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12 }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: "#334155" }}>Set prediction time:</span>
+                    <input
+                      type="time"
+                      value={futureTime}
+                      onChange={(e) => setFutureTime(e.target.value)}
+                      style={{
+                        border: "1px solid #cbd5e1", borderRadius: 999, padding: "8px 12px",
+                        background: "#fff", color: "#0f172a", fontSize: 13,
+                      }}
+                    />
+                    <span style={{ fontSize: 11, color: "#64748b" }}>{predictionMessage}</span>
+                  </div>
+                ) : (
+                  <p style={{ fontSize: 11, color: "#64748b", marginBottom: 12 }}>Live values update every 2 seconds.</p>
+                )}
                 <div className="g2" style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 12 }}>
-                  <SensorTile label="Temperature" value={temp.toFixed(1)} unit="°C"    color="#f97316" icon="🌡️" alert={false} />
-                  <SensorTile label="Humidity"    value={hum.toFixed(0)}  unit="%"     color="#0ea5e9" icon="💧" alert={false} />
-                  <SensorTile label="CO Level"    value={co.toFixed(1)}   unit="ppm"   color="#a855f7" icon="🫧" alert={co > 50} />
-                  <SensorTile label="PM2.5"       value={pm25.toFixed(1)} unit="µg/m³" color="#f59e0b" icon="🌫️" alert={pm25 > 100} />
+                  <SensorTile label="Temperature" value={displayTemp.toFixed(1)} unit="°C"    color="#f97316" icon="🌡️" alert={displayTemp > 40} />
+                  <SensorTile label="Humidity"    value={displayHum.toFixed(0)}  unit="%"     color="#0ea5e9" icon="💧" alert={displayHum < 20 || displayHum > 80} />
+                  <SensorTile label="CO Level"    value={displayCo.toFixed(1)}   unit="ppm"   color="#a855f7" icon="🫧" alert={displayCo > 50} />
+                  <SensorTile label="PM2.5"       value={displayPm25.toFixed(1)} unit="µg/m³" color="#f59e0b" icon="🌫️" alert={displayPm25 > 100} />
                 </div>
               </div>
 
